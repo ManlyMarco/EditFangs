@@ -7,6 +7,7 @@ using KKAPI.Chara;
 using ExtensibleSaveFormat;
 using MessagePack;
 using System.Collections;
+using KKAPI.Maker;
 
 namespace EditFangs
 {
@@ -17,17 +18,26 @@ namespace EditFangs
         internal Vector3[] fangsBaseVertices = new Vector3[42];
         internal Vector3[] fangsBaseNormals = new Vector3[42];
         private bool registered;
-        private bool loaded;
         public FangData fangData = new FangData { dirty = false };
         private int[] tips = new int[2];
         private int[] rotp = new int[2];
         private int headID = 1;
 
         private GameObject fangsObject;
+        private Mesh meshCopy;
+
         private GameObject GetFangsObject()
         {
-            //return fangsObject != null ? fangsObject : fangsObject = ChaControl.objHead?.transform.Find("N_tonn_face/N_cf_haed")?.FindLoop("cf_O_canine")?.gameObject;
-            return fangsObject != null ? fangsObject : fangsObject = ChaControl.objHead?.transform.Find("N_tonn_face/N_cf_haed/cf_O_canine")?.gameObject;
+            if (fangsObject != null)
+            {
+                return fangsObject;
+            }
+            else
+            {
+                meshCopy = null;
+                //return fangsObject = ChaControl.objHead?.transform.Find("N_tonn_face/N_cf_haed")?.FindLoop("cf_O_canine")?.gameObject;
+                return fangsObject = ChaControl.objHead?.transform.Find("N_tonn_face/N_cf_haed/cf_O_canine")?.gameObject;
+            }
         }
 
         protected override void Update()
@@ -48,7 +58,7 @@ namespace EditFangs
             }
             else
             {
-                var data = new PluginData();
+                PluginData data = new PluginData();
 
                 data.data.Add("fangData", MessagePackSerializer.Serialize(fangData));
 
@@ -63,47 +73,63 @@ namespace EditFangs
             if (maintainState)
                 return;
 
-            if (!loaded && !registered)
+            if (!fangData.IsEmpty())
+                fangData = new FangData { dirty = true };
+
+            PluginData data = GetExtendedData();
+
+            // Only bother initializing if there is any sort of data in the card
+            if (data != null || fangData.dirty || MakerAPI.InsideMaker)
             {
-                if (!registerFangs())
+                if (!registered && !registerFangs())
+                {
+                    enabled = false;
                     return;
+                }
             }
 
-            fangData = new FangData { dirty = fangData.IsEmpty() };
-
-            var data = GetExtendedData();
             if (data == null)
+            {
+                if (fangData.dirty)
+                {
+                    adjustFang(fangData);
+                    fangData.dirty = false;
+                }
+                enabled = false;
                 return;
+            }
+
+            enabled = true;
 
             //Logger.LogDebug($"Loading extended data for {ChaControl.chaFile.parameter.fullname}");
 
             // clone the loaded mesh to make sure that it's mesh is not shared with other characters
-            var fangs = GetFangsObject();
-            fangs.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh = Instantiate(fangs.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh);
+            SkinnedMeshRenderer renderer = GetFangsObject().GetComponentInChildren<SkinnedMeshRenderer>();
+            if (meshCopy == null)
+                meshCopy = Instantiate(renderer.sharedMesh);
+            if (renderer.sharedMesh != meshCopy)
+                renderer.sharedMesh = meshCopy;
 
-            if (data.data.TryGetValue("fangData", out var fangDataSerialised) && fangDataSerialised != null)
+            if (data.data.TryGetValue("fangData", out object fangDataSerialised) && fangDataSerialised != null)
                 fangData = MessagePackSerializer.Deserialize<FangData>((byte[])fangDataSerialised);
-
-            loaded = true;
-            //StartCoroutine(adjustFangDelayed(0.5f, true));
         }
         internal bool registerFangs()
         {
-            var fangs = GetFangsObject();
-            var mesh = fangs?.GetComponentInChildren<SkinnedMeshRenderer>()?.sharedMesh;
+            GameObject fangs = GetFangsObject();
+            Mesh mesh = fangs?.GetComponentInChildren<SkinnedMeshRenderer>()?.sharedMesh;
             if (mesh == null) return false;
             float lowestY = 100;
-            var tipI = new List<int>();
+            List<int> tipI = new List<int>();
             if (ChaControl.fileFace.headId != headID)
             {
                 headID = ChaControl.fileFace.headId;
-                for (var i = 0; i < mesh.vertices.Length; i++)
+                for (int i = 0; i < mesh.vertices.Length; i++)
                 {
                     fangsBaseVertices[i] = new Vector3(mesh.vertices[i].x, mesh.vertices[i].y, mesh.vertices[i].z);
                     fangsBaseNormals[i] = new Vector3(mesh.normals[i].x, mesh.normals[i].y, mesh.normals[i].z);
                     if (mesh.vertices[i].y < lowestY) lowestY = mesh.vertices[i].y;
                 }
-                for (var i = 0; i < mesh.vertices.Length; i++)
+                for (int i = 0; i < mesh.vertices.Length; i++)
                 {
                     if (mesh.vertices[i].y == lowestY) tipI.Add(i);
                     if (mesh.vertices[i] == new Vector3(-0.007559223f, 0.01637148f, 0.08396365f)) rotp[0] = i;
@@ -131,9 +157,9 @@ namespace EditFangs
         public void adjustFang(float scaleL, float spacingL, float scaleR, float spacingR, bool readjust = false)
         {
             if (!registered) return;
-            var fangs = GetFangsObject();
+            GameObject fangs = GetFangsObject();
             if (fangs == null) return;
-            var mesh = fangs.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh;
+            Mesh mesh = fangs.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh;
             if (mesh.vertexCount != 42) return;
 
             if (KoikatuAPI.GetCurrentGameMode() != GameMode.Maker) //dont spam the log to hard
@@ -141,25 +167,25 @@ namespace EditFangs
                 Logger.LogDebug($"adjusting {ChaControl.chaFile.parameter.fullname}: ({scaleL} | {spacingL} | {scaleR} | {spacingR})");
             }
 
-            var vertices = new Vector3[42];
-            var normals = new Vector3[42];
+            Vector3[] vertices = new Vector3[42];
+            Vector3[] normals = new Vector3[42];
 
             // special factors used to move and rotate the fang according to the spacing
-            var spacingModL = (float)Math.Cos(spacingL * Math.PI / 2) * (float)((spacingL <= 1f) ? 1 : 2.3);
-            var spacingModR = (float)Math.Cos(spacingR * Math.PI / 2) * (float)((spacingR <= 1f) ? 1 : 2.3);
+            float spacingModL = (float)Math.Cos(spacingL * Math.PI / 2) * (float)((spacingL <= 1f) ? 1 : 2.3);
+            float spacingModR = (float)Math.Cos(spacingR * Math.PI / 2) * (float)((spacingR <= 1f) ? 1 : 2.3);
 
             // point around which the left fang rotates
-            var rotationPointL = mesh.vertices[rotp[0]] * 0.99f;
+            Vector3 rotationPointL = mesh.vertices[rotp[0]] * 0.99f;
             // left rotation
-            var rotateL = Quaternion.Euler(0, spacingModL * 30, 0);
+            Quaternion rotateL = Quaternion.Euler(0, spacingModL * 30, 0);
 
             // point around which the rigth fang rotates
-            var rotationPointR = mesh.vertices[rotp[1]] * 0.99f;
+            Vector3 rotationPointR = mesh.vertices[rotp[1]] * 0.99f;
             // right rotation
-            var rotateR = Quaternion.Euler(0, spacingModR * -30, 0);
+            Quaternion rotateR = Quaternion.Euler(0, spacingModR * -30, 0);
 
             // calculation
-            for (var i = 0; i < mesh.vertices.Length; i++)
+            for (int i = 0; i < mesh.vertices.Length; i++)
             {
                 normals[i] = new Vector3(fangsBaseNormals[i].x, fangsBaseNormals[i].y, fangsBaseNormals[i].z);
                 if (i >= 21) // right fang
