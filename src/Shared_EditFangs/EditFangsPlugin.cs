@@ -25,44 +25,27 @@ namespace EditFangs
         public const string GUID = "org.njaecha.plugins.editfangs";
         public const string Version = "1.1.0";
 
-        internal new static ManualLogSource Logger;
-        internal static EditFangsPlugin Instance;
+        internal static new ManualLogSource Logger;
 
-        internal static MakerSlider fangSizeSliderL;
-        internal static MakerSlider fangSizeSliderR;
-        internal static MakerSlider fangSpacingSliderL;
-        internal static MakerSlider fangSpacingSliderR;
-
-        void Awake()
+        private void Awake()
         {
-            EditFangsPlugin.Logger = base.Logger;
-            EditFangsPlugin.Instance = this;
+            Logger = base.Logger;
             CharacterApi.RegisterExtraBehaviour<EditFangsController>(GUID);
             MakerAPI.RegisterCustomSubCategories += RegisterCustomSubCategories;
         }
 
-        private static void RegisterCustomSubCategories(object sender, RegisterSubCategoriesEvent e)
+        private void RegisterCustomSubCategories(object sender, RegisterSubCategoriesEvent e)
         {
-            fangSizeSliderL = e.AddControl(new MakerSlider(MakerConstants.Face.Mouth, "Left Fang Length", 0f, 1f, 0.1f, EditFangsPlugin.Instance));
-            fangSpacingSliderL = e.AddControl(new MakerSlider(MakerConstants.Face.Mouth, "Left Fang Spacing", 0f, 1.3f, 1f, EditFangsPlugin.Instance));
-            fangSizeSliderR = e.AddControl(new MakerSlider(MakerConstants.Face.Mouth, "Right Fang Length", 0f, 1f, 0.1f, EditFangsPlugin.Instance));
-            fangSpacingSliderR = e.AddControl(new MakerSlider(MakerConstants.Face.Mouth, "Right Fang Spacing", 0f, 1.3f, 1f, EditFangsPlugin.Instance));
-            fangSizeSliderL.ValueChanged.Subscribe(i => adjustFangMaker(i, fangSpacingSliderL.Value, fangSizeSliderR.Value, fangSpacingSliderR.Value));
-            fangSizeSliderR.ValueChanged.Subscribe(i => adjustFangMaker(fangSizeSliderL.Value, fangSpacingSliderL.Value, i, fangSpacingSliderR.Value));
-            fangSpacingSliderL.ValueChanged.Subscribe(i => adjustFangMaker(fangSizeSliderL.Value, i, fangSizeSliderR.Value, fangSpacingSliderR.Value, true));
-            fangSpacingSliderR.ValueChanged.Subscribe(i => adjustFangMaker(fangSizeSliderL.Value, fangSpacingSliderL.Value, fangSizeSliderR.Value, i, true));
+            e.AddControl(new MakerSlider(MakerConstants.Face.Mouth, "Left Fang Length", 0f, 1f, 0.1f, this))
+                .BindToFunctionController<EditFangsController, float>(controller => controller.fangData.scaleL, (controller, value) => controller.fangData.scaleL = value);
+            e.AddControl(new MakerSlider(MakerConstants.Face.Mouth, "Left Fang Spacing", 0f, 1.3f, 1f, this))
+                .BindToFunctionController<EditFangsController, float>(controller => controller.fangData.spacingL, (controller, value) => controller.fangData.spacingL = value);
+            e.AddControl(new MakerSlider(MakerConstants.Face.Mouth, "Right Fang Length", 0f, 1f, 0.1f, this))
+                .BindToFunctionController<EditFangsController, float>(controller => controller.fangData.scaleR, (controller, value) => controller.fangData.scaleR = value);
+            e.AddControl(new MakerSlider(MakerConstants.Face.Mouth, "Right Fang Spacing", 0f, 1.3f, 1f, this))
+                .BindToFunctionController<EditFangsController, float>(controller => controller.fangData.spacingR, (controller, value) => controller.fangData.spacingR = value);
 
-            Singleton<ChaCustom.CustomBase>.Instance.actUpdateCvsMouth += registerFangs;
-        }
-
-        public static void adjustFangMaker(float scaleL, float spacingL, float scaleR, float spacingR, bool readjust = false)
-        {
-            MakerAPI.GetCharacterControl().GetComponent<EditFangsController>().adjustFang(scaleL, spacingL, scaleR, spacingR, readjust);
-        }
-
-        private static void registerFangs()
-        {
-            MakerAPI.GetCharacterControl().GetComponent<EditFangsController>().registerFangs();
+            Singleton<ChaCustom.CustomBase>.Instance.actUpdateCvsMouth += () => MakerAPI.GetCharacterControl().GetComponent<EditFangsController>().registerFangs();
         }
     }
 }
